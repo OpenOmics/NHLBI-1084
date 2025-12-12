@@ -255,12 +255,11 @@ def parsed_arguments(name, description):
 
         {3}{4}Required arguments:{5}
           --input INPUT [INPUT ...]
-                                Input FastQ file(s) to process. The pipeline does NOT
-                                support single-end data. FastQ files for one or more  
-                                samples can be provided. Multiple input FastQ files
-                                should be seperated by a space. Globbing for multiple
-                                file is also supported.
-                                  Example: --input .tests/*.R?.fastq.gz
+                                Input CCS or HiFi bam file(s) to process. The pipeline 
+                                does NOT support input in fastq format.Multiple input 
+                                bam filesshould be seperated by a space. Globbing for 
+                                multiple files is also supported.
+                                  Example: --input .tests/*.bam
           --output OUTPUT
                                 Path to an output directory. This location is where
                                 the pipeline will create all of its output files, also
@@ -268,9 +267,10 @@ def parsed_arguments(name, description):
                                 provided working directory has not been initialized,
                                 it will be created automatically.
                                   Example: --output /data/$USER/output
-
-        {3}{4}Analysis options:{5}
-          ...coming soon!
+          --reference REFERENCE
+                                Reference genome for mapping data to.
+          --gff GFF
+                                GFF or GTF file to identify known and novel genes/isoforms.
 
         {3}{4}Orchestration options:{5}
           --mode {{slurm,local}}  
@@ -384,7 +384,7 @@ def parsed_arguments(name, description):
     )
 
     # Required Arguments
-    # Input FastQ files
+    # Input bam files
     subparser_run.add_argument(
         '--input',
         # Check if the file exists and if it is readable
@@ -403,6 +403,22 @@ def parsed_arguments(name, description):
         help = argparse.SUPPRESS
     )
 
+    # Reference genome
+    subparser_run.add_argument(
+        '--reference',
+        type = lambda file: permissions(parser, file, os.R_OK),
+        required = True,
+        help = argparse.SUPPRESS
+    )
+
+    # Reference GTF annotation
+    subparser_run.add_argument(
+        '--gff',
+        type = lambda file: permissions(parser, file, os.R_OK),
+        required = True,
+        help = argparse.SUPPRESS
+    )
+    
     # Optional Arguments
     # Add custom help message
     subparser_run.add_argument(
