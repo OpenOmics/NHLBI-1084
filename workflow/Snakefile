@@ -15,13 +15,187 @@ from scripts.common import (
     str_bool
 )
 
+import os
 
-# Final ouput files of the pipeline
+configfile: "config.yaml"
+
+SAMPLES = list(config["samples"])
+REF = config['options']["reference"]
+ANNOT = config['options']["gff"]
+
 rule all:
     input:
-        []
+        # Pigeon filtered output per sample
+        expand("pigeon/{sample}/{sample}.sorted.filtered_lite.gff", sample=SAMPLES),
+        expand("pigeon/{sample}/{sample}.filtered_lite_classification.txt", sample=SAMPLES)
+
+################################
+# Iso-Seq3 pipeline per sample #
+################################
+
+rule isoseq_refine:
+    """
+    Refine CCS into FLNC reads.
+    Input: CCS BAM.
+    Output: FLNC BAM.
+    """
+    input:
+        ccs = lambda wildcards: config["samples"][wildcards.sample]
+    output:
+        flnc = "isoseq/{sample}/{sample}.flnc.bam"
+    threads: config["threads"]["isoseq"]
+    shell:
+        """
+        module load smrtanalysis
+        mkdir -p isoseq/{wildcards.sample}
+        isoseq refine {input.ccs} {output.flnc} \
+            --num-threads {threads}
+        """
+
+rule isoseq_cluster:
+    """
+    Cluster FLNC into isoforms.
+    """
+    input:
+        flnc = rules.isoseq_refine.output.flnc
+    output:
+        clustered_bam = "isoseq/{sample}/{sample}.clustered.bam",
+        hq_fa = "isoseq/{sample}/{sample}.hq.fasta.gz",
+        lq_fa = "isoseq/{sample}/{sample}.lq.fasta.gz"
+    threads: config["threads"]["isoseq"]
+    shell:
+        """
+        isoseq3 cluster {input.flnc} {output.clustered_bam} \
+            --verbose --use-qvs --num-threads {threads}
+        # Iso-Seq3 writes HQ/LQ fasta.gz next to clustered.bam;
+        # rename/link them to predictable names:
+        # (adjust if your isoseq3 version names them differently)
+        ln -sf $(dirname {output.clustered_bam})/*.hq.fasta.gz {output.hq_fa}
+        ln -sf $(dirname {output.clustered_bam})/*.lq.fasta.gz {output.lq_fa}
+        """
+
+rule isoseq_polish:
+    """
+    Polish clustered isoforms (optional but recommended).
+    Requires subreads/subreadset; modify inputs accordingly.
+    Here we assume a merged subreadset XML or BAM is available per sample.
+    """
+    input:
+        clustered_bam = rules.isoseq_cluster.output.clustered_bam,
+        subreads = "data/{sample}.subreads.bam"   # adjust path
+    output:
+        polished_bam = "isoseq/{sample}/{sample}.polished.bam"
+    threads: config["threads"]["isoseq"]
+    shell:
+        """
+        isoseq3 polish {input.clustered_bam} {input.subreads} {output.polished_bam} \
+            --num-threads {threads}
+        """
+
+rule isoseq_collapse:
+    """
+    Collapse polished isoforms to GFF for Pigeon.
+    The Iso-Seq3 docs use 'isoseq3 collapse' (or 'isoseq collapse' in older versions);
+    adjust the command to your installed version.
+    """
+    input:
+        polished_bam = rules.isoseq_polish.output.polished_bam
+    output:
+        collapse_gff = "isoseq/{sample}/{sample}.collapsed.gff"
+    threads: config["threads"]["isoseq"]
+    shell:
+        """
+        isoseq3 collapse {input.polished_bam} {output.collapse_gff} \
+            --num-threads {threads}
+        """
+
+rule sort_collapse_gff:
+    """
+    Sort isoform GFF by chrom and coordinate for Pigeon.
+    """
+    input:
+        gff = rules.isoseq_collapse.output.collapse_gff
+    output:
+        sorted_gff = "isoseq/{sample}/{sample}.collapsed.sorted.gff"
+    shell:
+        """
+        sort -k1,1 -k4,4n {input.gff} > {output.sorted_gff}
+        """
+
+###############################
+# Pigeon reference preparation #
+###############################
+
+rule pigeon_prepare:
+    """
+    Prepare annotation + reference for Pigeon (only once, shared).
+    Produces sorted/indexed annotation.
+    """
+    input:
+        gtf = ANNOT,
+        fasta = REF
+    output:
+        # Exact output names depend on Pigeon version; a common pattern:
+        gtf_prepped = PIGEON_PREFIX + ".gtf.gz",
+        fai = REF + ".fai"
+    threads: config["threads"]["pigeon"]
+    shell:
+        """
+        # Index reference if not already
+        if [ ! -f {output.fai} ]; then
+            samtools faidx {input.fasta}
+        fi
+
+        pigeon prepare \
+            --gtf {input.gtf} \
+            --genome {input.fasta} \
+            --out-prefix {PIGEON_PREFIX} \
+            --threads {threads}
+        """
+
+################
+# Pigeon steps #
+################
+
+rule pigeon_classify:
+    """
+    Classify isoforms with Pigeon.
+    """
+    input:
+        isoforms = rules.sort_collapse_gff.output.sorted_gff,
+        annot = rules.pigeon_prepare.output.gtf_prepped,
+        fasta = REF
+    output:
+        classification = "pigeon/{sample}/{sample}.classification.txt"
+    threads: config["threads"]["pigeon"]
+    shell:
+        """
+        mkdir -p pigeon/{wildcards.sample}
+        pigeon classify {input.isoforms} {input.annot} {input.fasta} \
+            --threads {threads} \
+            > {output.classification}
+        """
+
+rule pigeon_filter:
+    """
+    Filter classified isoforms and generate filtered GFF.
+    """
+    input:
+        classification = rules.pigeon_classify.output.classification,
+        isoforms = rules.sort_collapse_gff.output.sorted_gff
+    output:
+        filtered_class = "pigeon/{sample}/{sample}.filtered_lite_classification.txt",
+        filtered_gff = "pigeon/{sample}/{sample}.sorted.filtered_lite.gff"
+    threads: 1
+    shell:
+        """
+        pigeon filter {input.classification} --isoforms {input.isoforms}
+        # Pigeon writes outputs in CWD with default names; move/rename:
+        mv *.filtered_lite_classification.txt {output.filtered_class}
+        mv *.sorted.filtered_lite.gff {output.filtered_gff}
+        """
 
 
 # Import rules 
-include: join("rules", "common.smk")
-include: join("rules", "hooks.smk")
+#include: join("rules", "common.smk")
+#include: join("rules", "hooks.smk")
