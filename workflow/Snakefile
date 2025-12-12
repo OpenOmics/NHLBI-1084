@@ -40,16 +40,17 @@ rule isoseq_refine:
     Output: FLNC BAM.
     """
     input:
-        ccs = lambda wildcards: config["samples"][wildcards.sample]
+        bam = join(workpath, "{sample}.bam"),
     output:
-        flnc = "isoseq/{sample}/{sample}.flnc.bam"
+        flnc = join(workpath,"1_refine/{sample}.flnc.bam"),
+    params:
+        dir = join(workpath,"1_refine")
     threads: config["threads"]["isoseq"]
     shell:
         """
         module load smrtanalysis
-        mkdir -p isoseq/{wildcards.sample}
-        isoseq refine {input.ccs} {output.flnc} \
-            --num-threads {threads}
+        mkdir -p {params.dir}
+        isoseq3 refine {input.bam} {output.flnc} --num-threads {threads} --require-polya -v
         """
 
 rule isoseq_cluster:
