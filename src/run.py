@@ -113,21 +113,21 @@ def rename(filename):
     # key = regex to match string and value = how it will be renamed
     extensions = {
         # Matches: _R[12]_fastq.gz, _R[12].fastq.gz, _R[12]_fq.gz, etc.
-        ".R1.f(ast)?q.gz$": ".R1.fastq.gz",
-        ".R2.f(ast)?q.gz$": ".R2.fastq.gz",
+        #".R1.f(ast)?q.gz$": ".R1.fastq.gz",
+        #".R2.f(ast)?q.gz$": ".R2.fastq.gz",
         # Matches: _R[12]_001_fastq_gz, _R[12].001.fastq.gz, _R[12]_001.fq.gz, etc.
         # Capture lane information as named group
-        ".R1.(?P<lane>...).f(ast)?q.gz$": ".R1.fastq.gz",
-        ".R2.(?P<lane>...).f(ast)?q.gz$": ".R2.fastq.gz",
+        #".R1.(?P<lane>...).f(ast)?q.gz$": ".R1.fastq.gz",
+        #".R2.(?P<lane>...).f(ast)?q.gz$": ".R2.fastq.gz",
         # Matches: _[12].fastq.gz, _[12].fq.gz, _[12]_fastq_gz, etc.
-        "_1.f(ast)?q.gz$": ".R1.fastq.gz",
-        "_2.f(ast)?q.gz$": ".R2.fastq.gz"
+        #"_1.f(ast)?q.gz$": ".R1.fastq.gz",
+        #"_2.f(ast)?q.gz$": ".R2.fastq.gz"
     }
 
-    if (filename.endswith('.R1.fastq.gz') or
-        filename.endswith('.R2.fastq.gz')):
+    if (filename.endswith('.bam')):
         # Filename is already in the correct format
         return filename
+
 
     converted = False
     for regex, new_ext in extensions.items():
@@ -431,7 +431,7 @@ def add_sample_metadata(input_files, config, group=None):
     config['samples'] = []
     for file in input_files:
         # Split sample name on file extension
-        sample = re.split('\.R[12]\.fastq\.gz', os.path.basename(file))[0]
+        sample = re.split('\.bam', os.path.basename(file))[0]
         if sample not in added:
             # Only add PE sample information once
             added.append(sample)
