@@ -45,13 +45,16 @@ rule isoseq_refine:
     output:
         flnc = join(workpath,"1_refine/{sample}.flnc.bam"),
     params:
-        dir = join(workpath,"1_refine")
-    threads: config["threads"]["isoseq"]
+        dir = join(workpath,"1_refine"),
+        rname = "isoseq_refine",
+    resources:
+        mem   = allocated("mem",  "isoseq_refine", cluster),
+        time  = allocated("time", "isoseq_refine", cluster),
     shell:
         """
         module load smrtanalysis
         mkdir -p {params.dir}
-        isoseq3 refine {input.bam} {output.flnc} --num-threads {threads} --require-polya -v
+        isoseq refine {input.bam} {output.flnc} --num-threads {threads} --require-polya -v
         """
 
 rule isoseq_cluster:
@@ -61,19 +64,19 @@ rule isoseq_cluster:
     input:
         flnc = rules.isoseq_refine.output.flnc
     output:
-        clustered_bam = "isoseq/{sample}/{sample}.clustered.bam",
-        hq_fa = "isoseq/{sample}/{sample}.hq.fasta.gz",
-        lq_fa = "isoseq/{sample}/{sample}.lq.fasta.gz"
-    threads: config["threads"]["isoseq"]
+        clustered_bam = join(workpath,"2_cluster/{sample}.clustered.bam"),
+    params:
+        dir = join(workpath,"2_cluster"),
+        rname = "isoseq_cluster",
+    resources:
+        mem   = allocated("mem",  "isoseq_cluster", cluster),
+        time  = allocated("time", "isoseq_cluster", cluster),
+        threads  = allocated("threads", "isoseq_cluster", cluster),
     shell:
         """
-        isoseq3 cluster {input.flnc} {output.clustered_bam} \
-            --verbose --use-qvs --num-threads {threads}
-        # Iso-Seq3 writes HQ/LQ fasta.gz next to clustered.bam;
-        # rename/link them to predictable names:
-        # (adjust if your isoseq3 version names them differently)
-        ln -sf $(dirname {output.clustered_bam})/*.hq.fasta.gz {output.hq_fa}
-        ln -sf $(dirname {output.clustered_bam})/*.lq.fasta.gz {output.lq_fa}
+        module load smrtanalysis
+        mkdir -p {params.dir}
+        isoseq cluster {input.flnc} {output.clustered_bam} --verbose --use-qvs --num-threads {resources.threads}
         """
 
 rule isoseq_polish:
@@ -90,7 +93,7 @@ rule isoseq_polish:
     threads: config["threads"]["isoseq"]
     shell:
         """
-        isoseq3 polish {input.clustered_bam} {input.subreads} {output.polished_bam} \
+        isoseq polish {input.clustered_bam} {input.subreads} {output.polished_bam} \
             --num-threads {threads}
         """
 
