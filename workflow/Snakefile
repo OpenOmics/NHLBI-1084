@@ -3,37 +3,43 @@ from os.path import join
 from os import listdir
 import os, sys, json
 
-# 3rd party imports from pypi
-from snakemake.workflow import workflow as wf_api
-from snakemake.utils import R
-
 # Local imports
 from scripts.common import (
     allocated,
-    provided, 
+    provided,
     references,
     str_bool
 )
 
-import os
+# Global workflow variables
+configfile: "config.json"
+SAMPLES     = list(config["samples"])             # List of sample basenames
+REF         = config['options']["reference"]      # Genomic fasta file
+ANNOT       = config['options']["gff"]            # Annotation file for genome
+workpath    = config['project']['workpath']       # Output directory of pipeline
 
-configfile: "config.yaml"
+# Read in resource information,
+# containing information about
+# threads, mem, walltimes, etc.
+# TODO: Add handler for when the
+# mode is set to local.
+with open(join(workpath, 'config', 'cluster.json')) as fh:
+    cluster = json.load(fh)
 
-SAMPLES = list(config["samples"])
-REF = config['options']["reference"]
-ANNOT = config['options']["gff"]
-workpath = config['project']['workpath']
 
+################################
+# Final output files           #
+################################
 rule all:
     input:
         # Pigeon filtered output per sample
         expand("pigeon/{sample}/{sample}.sorted.filtered_lite.gff", sample=SAMPLES),
         expand("pigeon/{sample}/{sample}.filtered_lite_classification.txt", sample=SAMPLES)
 
+
 ################################
 # Iso-Seq3 pipeline per sample #
 ################################
-
 rule isoseq_refine:
     """
     Refine CCS into FLNC reads.
@@ -45,17 +51,24 @@ rule isoseq_refine:
     output:
         flnc = join(workpath,"1_refine/{sample}.flnc.bam"),
     params:
-        dir = join(workpath,"1_refine"),
+        outdir = join(workpath,"1_refine"),
         rname = "isoseq_refine",
     resources:
         mem   = allocated("mem",  "isoseq_refine", cluster),
         time  = allocated("time", "isoseq_refine", cluster),
+    threads:
+        int(allocated("threads", "isoseq_refine", cluster)),
     shell:
         """
         module load smrtanalysis
-        mkdir -p {params.dir}
-        isoseq refine {input.bam} {output.flnc} --num-threads {threads} --require-polya -v
+        mkdir -p {params.outdir}
+        isoseq refine \\
+            {input.bam} \\
+            {output.flnc} \\
+            --num-threads {threads} \\
+            --require-polya -v
         """
+
 
 rule isoseq_cluster:
     """
@@ -66,18 +79,24 @@ rule isoseq_cluster:
     output:
         clustered_bam = join(workpath,"2_cluster/{sample}.clustered.bam"),
     params:
-        dir = join(workpath,"2_cluster"),
+        outdir = join(workpath,"2_cluster"),
         rname = "isoseq_cluster",
     resources:
         mem   = allocated("mem",  "isoseq_cluster", cluster),
         time  = allocated("time", "isoseq_cluster", cluster),
-        threads  = allocated("threads", "isoseq_cluster", cluster),
+    threads:
+        int(allocated("threads", "isoseq_cluster", cluster)),
     shell:
         """
         module load smrtanalysis
-        mkdir -p {params.dir}
-        isoseq cluster {input.flnc} {output.clustered_bam} --verbose --use-qvs --num-threads {resources.threads}
+        mkdir -p {params.outdir}
+        isoseq cluster \\
+            {input.flnc} \\
+            {output.clustered_bam} \\
+            --verbose --use-qvs \\
+            --num-threads {threads}
         """
+
 
 rule isoseq_polish:
     """
@@ -87,15 +106,23 @@ rule isoseq_polish:
     """
     input:
         clustered_bam = rules.isoseq_cluster.output.clustered_bam,
-        subreads = "data/{sample}.subreads.bam"   # adjust path
+        subreads = "{sample}.bam"   # TODO: Adjust path, not pointing to correct file, updated it just to get dry-run working
     output:
         polished_bam = "isoseq/{sample}/{sample}.polished.bam"
-    threads: config["threads"]["isoseq"]
+    resources:
+        mem   = allocated("mem",  "isoseq_polish", cluster),
+        time  = allocated("time", "isoseq_polish", cluster),
+    threads:
+        int(allocated("threads", "isoseq_polish", cluster)),
     shell:
         """
-        isoseq polish {input.clustered_bam} {input.subreads} {output.polished_bam} \
+        isoseq polish \\
+            {input.clustered_bam} \\
+            {input.subreads} \\
+            {output.polished_bam} \\
             --num-threads {threads}
         """
+
 
 rule isoseq_collapse:
     """
@@ -107,12 +134,19 @@ rule isoseq_collapse:
         polished_bam = rules.isoseq_polish.output.polished_bam
     output:
         collapse_gff = "isoseq/{sample}/{sample}.collapsed.gff"
-    threads: config["threads"]["isoseq"]
+    resources:
+        mem   = allocated("mem",  "isoseq_collapse", cluster),
+        time  = allocated("time", "isoseq_collapse", cluster),
+    threads:
+        int(allocated("threads", "isoseq_collapse", cluster)),
     shell:
         """
-        isoseq3 collapse {input.polished_bam} {output.collapse_gff} \
+        isoseq3 collapse \\
+            {input.polished_bam} \\
+            {output.collapse_gff} \\
             --num-threads {threads}
         """
+
 
 rule sort_collapse_gff:
     """
@@ -122,15 +156,22 @@ rule sort_collapse_gff:
         gff = rules.isoseq_collapse.output.collapse_gff
     output:
         sorted_gff = "isoseq/{sample}/{sample}.collapsed.sorted.gff"
+    resources:
+        mem   = allocated("mem",  "sort_collapse_gff", cluster),
+        time  = allocated("time", "sort_collapse_gff", cluster),
+    threads:
+        int(allocated("threads", "sort_collapse_gff", cluster)),
     shell:
         """
-        sort -k1,1 -k4,4n {input.gff} > {output.sorted_gff}
+        sort -k1,1 -k4,4n \\
+            {input.gff} \\
+        > {output.sorted_gff}
         """
 
-###############################
-# Pigeon reference preparation #
-###############################
 
+################################
+# Pigeon reference preparation #
+################################
 rule pigeon_prepare:
     """
     Prepare annotation + reference for Pigeon (only once, shared).
@@ -141,9 +182,15 @@ rule pigeon_prepare:
         fasta = REF
     output:
         # Exact output names depend on Pigeon version; a common pattern:
-        gtf_prepped = PIGEON_PREFIX + ".gtf.gz",
+        gtf_prepped = "pigeon_prep.gtf.gz",
         fai = REF + ".fai"
-    threads: config["threads"]["pigeon"]
+    params:
+        prefix = "pigeon_prep"
+    resources:
+        mem   = allocated("mem",  "pigeon_prepare", cluster),
+        time  = allocated("time", "pigeon_prepare", cluster),
+    threads:
+        int(allocated("threads", "pigeon_prepare", cluster)),
     shell:
         """
         # Index reference if not already
@@ -151,17 +198,16 @@ rule pigeon_prepare:
             samtools faidx {input.fasta}
         fi
 
-        pigeon prepare \
-            --gtf {input.gtf} \
-            --genome {input.fasta} \
-            --out-prefix {PIGEON_PREFIX} \
+        pigeon prepare \\
+            --gtf {input.gtf} \\
+            --genome {input.fasta} \\
+            --out-prefix {params.prefix} \\
             --threads {threads}
         """
 
 ################
 # Pigeon steps #
 ################
-
 rule pigeon_classify:
     """
     Classify isoforms with Pigeon.
@@ -172,13 +218,20 @@ rule pigeon_classify:
         fasta = REF
     output:
         classification = "pigeon/{sample}/{sample}.classification.txt"
-    threads: config["threads"]["pigeon"]
+    resources:
+        mem   = allocated("mem",  "pigeon_classify", cluster),
+        time  = allocated("time", "pigeon_classify", cluster),
+    threads:
+        int(allocated("threads", "pigeon_classify", cluster)),
     shell:
         """
         mkdir -p pigeon/{wildcards.sample}
-        pigeon classify {input.isoforms} {input.annot} {input.fasta} \
-            --threads {threads} \
-            > {output.classification}
+        pigeon classify \\
+            {input.isoforms} \\
+            {input.annot} \\
+            {input.fasta} \\
+            --threads {threads} \\
+        > {output.classification}
         """
 
 rule pigeon_filter:
@@ -191,16 +244,17 @@ rule pigeon_filter:
     output:
         filtered_class = "pigeon/{sample}/{sample}.filtered_lite_classification.txt",
         filtered_gff = "pigeon/{sample}/{sample}.sorted.filtered_lite.gff"
-    threads: 1
+    resources:
+        mem   = allocated("mem",  "pigeon_filter", cluster),
+        time  = allocated("time", "pigeon_filter", cluster),
+    threads:
+        int(allocated("threads", "pigeon_filter", cluster)),
     shell:
         """
-        pigeon filter {input.classification} --isoforms {input.isoforms}
+        pigeon filter \\
+            {input.classification} \\
+            --isoforms {input.isoforms}
         # Pigeon writes outputs in CWD with default names; move/rename:
         mv *.filtered_lite_classification.txt {output.filtered_class}
         mv *.sorted.filtered_lite.gff {output.filtered_gff}
         """
-
-
-# Import rules 
-#include: join("rules", "common.smk")
-#include: join("rules", "hooks.smk")
