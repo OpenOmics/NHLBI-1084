@@ -22,6 +22,7 @@ configfile: "config.yaml"
 SAMPLES = list(config["samples"])
 REF = config['options']["reference"]
 ANNOT = config['options']["gff"]
+workpath = config['project']['workpath']
 
 rule all:
     input:
