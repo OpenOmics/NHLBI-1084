@@ -4,5 +4,21 @@
         "mem": "8g",
         "partition": "norm",
         "time": "0-04:00:00"
+    },
+    "isoseq": {
+        "threads": "8",
+        "mem": "32g",
+        "time": "24:00:00"
+    },
+    "samtools_merge": {
+        "threads": "24",
+        "mem": "32g",
+        "time": "0-12:00:00"
+    },
+    "pigeon": {
+        "threads": "8",
+        "mem": "24g",
+        "time": "24:00:00"
     }
+}
 }
