@@ -356,7 +356,7 @@ def parsed_arguments(name, description):
           module load singularity snakemake
 
           # Step 2A.) Dry-run the pipeline
-          ./{0} run --input .tests/*.bam \\
+          ./{0} run --input .tests/*.bam --gtf test.gtf --reference test_ref.fa \\
                          --output /data/$USER/output \\
                          --mode slurm \\
                          --dry-run
@@ -365,7 +365,7 @@ def parsed_arguments(name, description):
           # The slurm mode will submit jobs to 
           # the cluster. It is recommended running 
           # the pipeline in this mode.
-          ./{0} run --input .tests/*.bam \\
+          ./{0} run --input .tests/*.bam --gtf test.gtf --reference test_ref.fa  \\
                          --output /data/$USER/output \\
                          --mode slurm
 
