@@ -30,16 +30,22 @@ with open(join(workpath, 'config', 'cluster.json')) as fh:
 ################################
 # Final output files           #
 ################################
+
 rule all:
     input:
         # Pigeon filtered output per sample
-        expand("pigeon/{sample}/{sample}.sorted.filtered_lite.gff", sample=SAMPLES),
-        expand("pigeon/{sample}/{sample}.filtered_lite_classification.txt", sample=SAMPLES)
-
+        expand(join(workpath,"4_classify/{sample}.collapsed.sorted.filtered_lite.gff"), sample=SAMPLES),
+        expand(join(workpath,"4_classify/{sample}_classification.filtered_lite_classification.txt"), sample=SAMPLES)
+        join(workpath,"4_classify/merge_classification.filtered_lite_classification.txt"),
+        join(workpath,"4_classify/merge.collapsed.sorted.filtered_lite.gff"),
+        expand(join(workpath,"5_annotate/{sample}.gff"), sample=SAMPLES),
+        join(workpath,"5_annotate/merge.gff"),
+        join(workpath,"5_annotate/gffcmp.expression.tracking"), 
 
 ################################
 # Iso-Seq3 pipeline per sample #
 ################################
+
 rule isoseq_refine:
     """
     Refine CCS into FLNC reads.
@@ -47,28 +53,23 @@ rule isoseq_refine:
     Output: FLNC BAM.
     """
     input:
-        bam = join(workpath, "{sample}.bam"),
+        bam = join(inpath, "{sample}.bam"),
     output:
         flnc = join(workpath,"1_refine/{sample}.flnc.bam"),
     params:
-        outdir = join(workpath,"1_refine"),
-        rname = "isoseq_refine",
+        dir = join(workpath,"1_refine")
+    	rname = "isoseq_refine",
+        barcodes = BARCODES,
     resources:
         mem   = allocated("mem",  "isoseq_refine", cluster),
         time  = allocated("time", "isoseq_refine", cluster),
-    threads:
-        int(allocated("threads", "isoseq_refine", cluster)),
+        threads  = allocated("threads", "isoseq_refine", cluster),
     shell:
         """
         module load smrtanalysis
-        mkdir -p {params.outdir}
-        isoseq refine \\
-            {input.bam} \\
-            {output.flnc} \\
-            --num-threads {threads} \\
-            --require-polya -v
+        mkdir -p {params.dir}
+        isoseq refine {input.bam} {params.barcodes} {output.flnc} --num-threads {resources.threads} --require-polya -v
         """
-
 
 rule isoseq_cluster:
     """
@@ -79,50 +80,18 @@ rule isoseq_cluster:
     output:
         clustered_bam = join(workpath,"2_cluster/{sample}.clustered.bam"),
     params:
-        outdir = join(workpath,"2_cluster"),
+        dir = join(workpath,"2_cluster"),
         rname = "isoseq_cluster",
     resources:
         mem   = allocated("mem",  "isoseq_cluster", cluster),
         time  = allocated("time", "isoseq_cluster", cluster),
-    threads:
-        int(allocated("threads", "isoseq_cluster", cluster)),
+        threads  = allocated("threads", "isoseq_cluster", cluster),
     shell:
         """
         module load smrtanalysis
-        mkdir -p {params.outdir}
-        isoseq cluster \\
-            {input.flnc} \\
-            {output.clustered_bam} \\
-            --verbose --use-qvs \\
-            --num-threads {threads}
+        mkdir -p {params.dir}
+        isoseq cluster {input.flnc} {output.clustered_bam} --verbose --use-qvs --num-threads {resources.threads} --require-polya
         """
-
-
-rule isoseq_polish:
-    """
-    Polish clustered isoforms (optional but recommended).
-    Requires subreads/subreadset; modify inputs accordingly.
-    Here we assume a merged subreadset XML or BAM is available per sample.
-    """
-    input:
-        clustered_bam = rules.isoseq_cluster.output.clustered_bam,
-        subreads = "{sample}.bam"   # TODO: Adjust path, not pointing to correct file, updated it just to get dry-run working
-    output:
-        polished_bam = "isoseq/{sample}/{sample}.polished.bam"
-    resources:
-        mem   = allocated("mem",  "isoseq_polish", cluster),
-        time  = allocated("time", "isoseq_polish", cluster),
-    threads:
-        int(allocated("threads", "isoseq_polish", cluster)),
-    shell:
-        """
-        isoseq polish \\
-            {input.clustered_bam} \\
-            {input.subreads} \\
-            {output.polished_bam} \\
-            --num-threads {threads}
-        """
-
 
 rule isoseq_collapse:
     """
@@ -131,22 +100,23 @@ rule isoseq_collapse:
     adjust the command to your installed version.
     """
     input:
-        polished_bam = rules.isoseq_polish.output.polished_bam
+        polished_bam = rules.isoseq_cluster.output.clustered_bam
     output:
-        collapse_gff = "isoseq/{sample}/{sample}.collapsed.gff"
+        collapse_gff = join(workpath,"3_collapse/{sample}.collapsed.gff")
+        abundance = join(workpath,"3_collapse/{sample}.collapsed.abundance.txt"),
+    params:
+        dir = join(workpath,"3_collapse"),
+        rname = "isoseq_collapse",
     resources:
         mem   = allocated("mem",  "isoseq_collapse", cluster),
         time  = allocated("time", "isoseq_collapse", cluster),
-    threads:
-        int(allocated("threads", "isoseq_collapse", cluster)),
+        threads  = allocated("threads", "isoseq_collapse", cluster),
     shell:
         """
-        isoseq3 collapse \\
-            {input.polished_bam} \\
-            {output.collapse_gff} \\
-            --num-threads {threads}
+        module load smrtanalysis
+        mkdir -p {params.dir}
+        isoseq collapse {input.polished_bam} {output.collapse_gff} --num-threads {resources.threads}
         """
-
 
 rule sort_collapse_gff:
     """
@@ -155,23 +125,94 @@ rule sort_collapse_gff:
     input:
         gff = rules.isoseq_collapse.output.collapse_gff
     output:
-        sorted_gff = "isoseq/{sample}/{sample}.collapsed.sorted.gff"
+        sorted_gff = "3_collapse/{sample}.collapsed.sorted.gff"
+    params:
+        rname = "sort_collapse_gff",
     resources:
         mem   = allocated("mem",  "sort_collapse_gff", cluster),
         time  = allocated("time", "sort_collapse_gff", cluster),
-    threads:
-        int(allocated("threads", "sort_collapse_gff", cluster)),
+        threads  = allocated("threads", "sort_collapse_gff", cluster),
     shell:
         """
-        sort -k1,1 -k4,4n \\
-            {input.gff} \\
-        > {output.sorted_gff}
+        sort -k1,1 -k4,4n {input.gff} > {output.sorted_gff}
+        """
+
+#########################
+# Isoseq on merged data #
+#########################
+
+rule samtools_merge:
+    """
+    merge sample bams to create a combined sample to run through pipeline
+    """
+    input:
+        bam = " ".join(expand(join(workpath, "2_cluster/{sample}.bam"),sample=SAMPLES)),
+    output:
+        bam = temp(join(workpath,"2_cluster/merge.bam")),
+    params:
+        dir = join(workpath,"2_cluster"),
+        rname = "samtools_merge",
+        barcodes = BARCODES,
+    resources:
+        mem   = allocated("mem",  "samtools_merge", cluster),
+        time  = allocated("time", "samtools_merge", cluster),
+        threads  = allocated("threads", "samtools_merge", cluster),
+    shell:
+        """
+        module load smrtanalysis samtools
+        mkdir -p {params.dir}
+        samtools merge -n -@ {resources.threads} -o {output.bam} {input.bam}
+        """
+
+rule isoseq_collapse_merge:
+    """
+    Collapse polished isoforms to GFF for Pigeon.
+    The Iso-Seq3 docs use 'isoseq3 collapse' (or 'isoseq collapse' in older versions);
+    adjust the command to your installed version.
+    """
+    input:
+        clustered_bam = join(workpath,"2_cluster/merge.clustered.bam"),
+    output:
+        collapse_gff = join(workpath,"3_collapse/merge.collapsed.gff")
+        abundance = join(workpath,"3_collapse/merge.collapsed.abundance.txt"),
+    params:
+        dir = join(workpath,"3_collapse"),
+        rname = "isoseq_collapse_merge",
+    resources:
+        mem   = allocated("mem",  "isoseq_collapse_merge", cluster),
+        time  = allocated("time", "isoseq_collapse_merge", cluster),
+        threads  = allocated("threads", "isoseq_collapse_merge", cluster),
+    shell:
+        """
+        module load smrtanalysis
+        mkdir -p {params.dir}
+        isoseq collapse {input.clustered_bam} {output.collapse_gff} --num-threads {resources.threads}
+        """
+
+rule sort_collapse_gff_merge:
+    """
+    Sort isoform GFF by chrom and coordinate for Pigeon.
+    """
+    input:
+        gff = rules.isoseq_collapse_merge.output.collapse_gff
+    output:
+        sorted_gff = join(workpath,"3_collapse/merge.collapsed.sorted.gff")
+    params:
+        rname = "sort_collapse_gff_merge",
+    resources:
+        mem   = allocated("mem",  "sort_collapse_gff_merge", cluster),
+        time  = allocated("time", "sort_collapse_gff_merge", cluster),
+        threads  = allocated("threads", "sort_collapse_gff_merge", cluster),
+    shell:
+        """
+        sort -k1,1 -k4,4n {input.gff} > {output.sorted_gff}
         """
 
 
 ################################
 # Pigeon reference preparation #
 ################################
+
 rule pigeon_prepare:
     """
     Prepare annotation + reference for Pigeon (only once, shared).
@@ -182,32 +223,35 @@ rule pigeon_prepare:
         fasta = REF
     output:
         # Exact output names depend on Pigeon version; a common pattern:
-        gtf_prepped = "pigeon_prep.gtf.gz",
+        gtf_prepped = join(workpath,"annotation.gtf"),
         fai = REF + ".fai"
     params:
-        prefix = "pigeon_prep"
+        rname = "pigeon_prepare",
+        prefix = "annotation",
     resources:
         mem   = allocated("mem",  "pigeon_prepare", cluster),
         time  = allocated("time", "pigeon_prepare", cluster),
-    threads:
-        int(allocated("threads", "pigeon_prepare", cluster)),
+        threads  = allocated("threads", "pigeon_prepare", cluster),
     shell:
         """
+        module load samtools smrtanalysis
+
         # Index reference if not already
         if [ ! -f {output.fai} ]; then
             samtools faidx {input.fasta}
         fi
 
-        pigeon prepare \\
-            --gtf {input.gtf} \\
-            --genome {input.fasta} \\
-            --out-prefix {params.prefix} \\
-            --threads {threads}
+        pigeon prepare \
+            --gtf {input.gtf} \
+            --genome {input.fasta} \
+            --out-prefix {params.prefix} \
+            --threads {resources.threads}
         """
 
 ################
 # Pigeon steps #
 ################
+
 rule pigeon_classify:
     """
     Classify isoforms with Pigeon.
@@ -216,22 +260,25 @@ rule pigeon_classify:
         isoforms = rules.sort_collapse_gff.output.sorted_gff,
         annot = rules.pigeon_prepare.output.gtf_prepped,
         fasta = REF
+        abundance = join(workpath,"3_collapse/{sample}.collapsed.abundance.txt"),
     output:
-        classification = "pigeon/{sample}/{sample}.classification.txt"
+        classification = join(workpath,"4_classify/{sample}_classification.txt"),
+        junctions = join(workpath,"4_classify/{sample}_junctions.txt"),
+    params:
+        rname = "pigeon_classify",
+        dir = join(workpath,"4_classify"),
     resources:
         mem   = allocated("mem",  "pigeon_classify", cluster),
         time  = allocated("time", "pigeon_classify", cluster),
-    threads:
-        int(allocated("threads", "pigeon_classify", cluster)),
+        threads  = allocated("threads", "pigeon_classify", cluster),
     shell:
         """
-        mkdir -p pigeon/{wildcards.sample}
-        pigeon classify \\
-            {input.isoforms} \\
-            {input.annot} \\
-            {input.fasta} \\
-            --threads {threads} \\
-        > {output.classification}
+        module load samtools smrtanalysis
+        mkdir -p {params.dir}
+        cd {params.dir}
+        pigeon classify {input.isoforms} {input.annot} {input.fasta} --fl {input.abundance} \
+            --threads {resources.threads} \
+            > {output.classification}
         """
 
 rule pigeon_filter:
@@ -240,21 +287,160 @@ rule pigeon_filter:
     """
     input:
         classification = rules.pigeon_classify.output.classification,
+        junctions = rules.pigeon_classify.output.junctions,
         isoforms = rules.sort_collapse_gff.output.sorted_gff
     output:
-        filtered_class = "pigeon/{sample}/{sample}.filtered_lite_classification.txt",
-        filtered_gff = "pigeon/{sample}/{sample}.sorted.filtered_lite.gff"
+        filtered_class = join(workpath,"4_classify/{sample}_classification.filtered_lite_classification.txt"),
+        filtered_gff = join(workpath,"4_classify/{sample}.collapsed.sorted.filtered_lite.gff"),
+    params:
+        rname = "pigeon_classify",
+        dir = join(workpath,"4_classify"),
     resources:
-        mem   = allocated("mem",  "pigeon_filter", cluster),
-        time  = allocated("time", "pigeon_filter", cluster),
-    threads:
-        int(allocated("threads", "pigeon_filter", cluster)),
+        mem   = allocated("mem",  "pigeon_classify", cluster),
+        time  = allocated("time", "pigeon_classify", cluster),
+        threads  = allocated("threads", "pigeon_classify", cluster),
     shell:
         """
-        pigeon filter \\
-            {input.classification} \\
-            --isoforms {input.isoforms}
-        # Pigeon writes outputs in CWD with default names; move/rename:
-        mv *.filtered_lite_classification.txt {output.filtered_class}
-        mv *.sorted.filtered_lite.gff {output.filtered_gff}
+        module load samtools smrtanalysis
+        cd (params.dir)
+        pigeon filter {input.classification} --isoforms {input.isoforms}
+        """
+
+#################################
+# Pigeon steps for merged files #
+#################################
+
+rule pigeon_classify_merge:
+    """
+    Classify isoforms with Pigeon.
+    """
+    input:
+        isoforms = rules.sort_collapse_gff_merge.output.sorted_gff,
+        annot = rules.pigeon_prepare.output.gtf_prepped,
+        fasta = REF
+        abundance = join(workpath,"3_collapse/merge.collapsed.abundance.txt"),
+    output:
+        classification = join(workpath,"4_classify/merge_classification.txt"),
+        junctions = join(workpath,"4_classify/merge_junctions.txt"),
+    params:
+        rname = "pigeon_classify_merge",
+        dir = join(workpath,"4_classify"),
+    resources:
+        mem   = allocated("mem",  "pigeon_classify_merge", cluster),
+        time  = allocated("time", "pigeon_classify_merge", cluster),
+        threads  = allocated("threads", "pigeon_classify_merge", cluster),
+    shell:
+        """
+        module load samtools smrtanalysis
+        mkdir -p {params.dir}
+        cd {params.dir}
+        pigeon classify {input.isoforms} {input.annot} {input.fasta} --fl {input.abundance} \
+            --threads {resources.threads} \
+            > {output.classification}
+        """
+
+rule pigeon_filter_merge:
+    """
+    Filter classified isoforms and generate filtered GFF.
+    """
+    input:
+        classification = rules.pigeon_classify.output.classification,
+        junctions = rules.pigeon_classify.output.junctions,
+        isoforms = rules.sort_collapse_gff.output.sorted_gff
+    output:
+        filtered_class = join(workpath,"4_classify/merge_classification.filtered_lite_classification.txt"),
+        filtered_gff = join(workpath,"4_classify/merge.collapsed.sorted.filtered_lite.gff"),
+    params:
+        rname = "pigeon_classify_merge",
+        dir = join(workpath,"4_classify"),
+    resources:
+        mem   = allocated("mem",  "pigeon_classify_merge", cluster),
+        time  = allocated("time", "pigeon_classify_merge", cluster),
+        threads  = allocated("threads", "pigeon_classify_merge", cluster),
+    shell:
+        """
+        module load samtools smrtanalysis
+        cd (params.dir)
+        pigeon filter {input.classification} --isoforms {input.isoforms}
+        """
+
+#####################################
+# Add annotation info to references #
+#####################################
+
+rule annotate_gtf:
+    input:
+        filtered_class = join(workpath,"4_classify/{sample}_classification.filtered_lite_classification.txt"),
+        filtered_gff = join(workpath,"4_classify/{sample}.collapsed.sorted.filtered_lite.gff"),       
+    output:
+        annotate_gff = join(workpath,"5_annotate/{sample}.gff"), 
+    params:
+        rname = "annotate_gtf",
+        dir = join(workpath,"5_annotate"),
+    resources:
+        mem   = allocated("mem",  "annotate_gtf", cluster),
+        time  = allocated("time", "annotate_gtf", cluster),
+        threads  = allocated("threads", "annotate_gtf", cluster),
+    run:
+        """
+        isos = {}
+        for line in open(input.filtered_class):
+            isos[line.split()[0]] = line.split()[6]
+
+        out = open(output.annotate_gff,"w")
+        for line in open(input.filtered_gff):
+            line = line.split('"')
+            line[1] = isos[line[3]]
+            out.write('"'.join(line))
+        out.close()
+        """
+
+rule annotate_gtf_merge:
+    input:
+        filtered_class = join(workpath,"4_classify/merge_classification.filtered_lite_classification.txt"),
+        filtered_gff = join(workpath,"4_classify/merge.collapsed.sorted.filtered_lite.gff"),       
+    output:
+        annotate_gff = join(workpath,"5_annotate/merge.gff"), 
+    params:
+        rname = "annotate_gtf_merge",
+        dir = join(workpath,"5_annotate"),
+    resources:
+        mem   = allocated("mem",  "annotate_gtf_merge", cluster),
+        time  = allocated("time", "annotate_gtf_merge", cluster),
+        threads  = allocated("threads", "annotate_gtf_merge", cluster),
+    run:
+        """
+        import os
+        os.mkdir(params.dir)
+
+        isos = {}
+        for line in open(input.filtered_class):
+            isos[line.split()[0]] = line.split()[6]
+
+        out = open(output.annotate_gff,"w")
+        for line in open(input.filtered_gff):
+            line = line.split('"')
+            line[1] = isos[line[3]]
+            out.write('"'.join(line))
+        out.close()
+        """
+
+rule find_overlaps:
+    input:
+        merge_gtf = rules.annotate_gtf_merge.output.annotate_gff,
+        filtered_gff = " ".join(expand(join(workpath,"5_annotate/{sample}.gff"), sample=SAMPLES)),
+    output:
+        expression = join(workpath,"5_annotate/gffcmp.expression.tracking"), 
+    params:
+        rname = "find_overlaps",
+        dir = join(workpath,"5_annotate"),
+    resources:
+        mem   = allocated("mem",  "find_overlaps", cluster),
+        time  = allocated("time", "find_overlaps", cluster),
+        threads  = allocated("threads", "find_overlaps", cluster),
+    shell:
+        """
+        module load gffcompare
+        cd {params.dir}
+        gffcompare -r {input.merge_gtf} {input.filtered_gff}
         """
