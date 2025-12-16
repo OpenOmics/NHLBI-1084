@@ -61,9 +61,9 @@ rule isoseq_refine:
     	rname = "isoseq_refine",
         barcodes = BARCODES,
     resources:
-        mem   = allocated("mem",  "isoseq_refine", cluster),
-        time  = allocated("time", "isoseq_refine", cluster),
-        threads  = allocated("threads", "isoseq_refine", cluster),
+        mem   = allocated("mem",  "isoseq", cluster),
+        time  = allocated("time", "isoseq", cluster),
+        threads  = allocated("threads", "isoseq", cluster),
     shell:
         """
         module load smrtanalysis
@@ -83,9 +83,9 @@ rule isoseq_cluster:
         dir = join(workpath,"2_cluster"),
         rname = "isoseq_cluster",
     resources:
-        mem   = allocated("mem",  "isoseq_cluster", cluster),
-        time  = allocated("time", "isoseq_cluster", cluster),
-        threads  = allocated("threads", "isoseq_cluster", cluster),
+        mem   = allocated("mem",  "isoseq", cluster),
+        time  = allocated("time", "isoseq", cluster),
+        threads  = allocated("threads", "isoseq", cluster),
     shell:
         """
         module load smrtanalysis
@@ -108,9 +108,9 @@ rule isoseq_collapse:
         dir = join(workpath,"3_collapse"),
         rname = "isoseq_collapse",
     resources:
-        mem   = allocated("mem",  "isoseq_collapse", cluster),
-        time  = allocated("time", "isoseq_collapse", cluster),
-        threads  = allocated("threads", "isoseq_collapse", cluster),
+        mem   = allocated("mem",  "isoseq", cluster),
+        time  = allocated("time", "isoseq", cluster),
+        threads  = allocated("threads", "isoseq", cluster),
     shell:
         """
         module load smrtanalysis
@@ -129,9 +129,9 @@ rule sort_collapse_gff:
     params:
         rname = "sort_collapse_gff",
     resources:
-        mem   = allocated("mem",  "sort_collapse_gff", cluster),
-        time  = allocated("time", "sort_collapse_gff", cluster),
-        threads  = allocated("threads", "sort_collapse_gff", cluster),
+        mem   = allocated("mem",  "__default__", cluster),
+        time  = allocated("time", "__default__", cluster),
+        threads  = allocated("threads", "__default__", cluster),
     shell:
         """
         sort -k1,1 -k4,4n {input.gff} > {output.sorted_gff}
@@ -179,9 +179,9 @@ rule isoseq_collapse_merge:
         dir = join(workpath,"3_collapse"),
         rname = "isoseq_collapse_merge",
     resources:
-        mem   = allocated("mem",  "isoseq_collapse_merge", cluster),
-        time  = allocated("time", "isoseq_collapse_merge", cluster),
-        threads  = allocated("threads", "isoseq_collapse_merge", cluster),
+        mem   = allocated("mem",  "isoseq", cluster),
+        time  = allocated("time", "isoseq", cluster),
+        threads  = allocated("threads", "isoseq", cluster),
     shell:
         """
         module load smrtanalysis
@@ -200,9 +200,9 @@ rule sort_collapse_gff_merge:
     params:
         rname = "sort_collapse_gff_merge",
     resources:
-        mem   = allocated("mem",  "sort_collapse_gff_merge", cluster),
-        time  = allocated("time", "sort_collapse_gff_merge", cluster),
-        threads  = allocated("threads", "sort_collapse_gff_merge", cluster),
+        mem   = allocated("mem",  "__default__", cluster),
+        time  = allocated("time", "__default__", cluster),
+        threads  = allocated("threads", "__default__", cluster),
     shell:
         """
         sort -k1,1 -k4,4n {input.gff} > {output.sorted_gff}
@@ -229,9 +229,9 @@ rule pigeon_prepare:
         rname = "pigeon_prepare",
         prefix = "annotation",
     resources:
-        mem   = allocated("mem",  "pigeon_prepare", cluster),
-        time  = allocated("time", "pigeon_prepare", cluster),
-        threads  = allocated("threads", "pigeon_prepare", cluster),
+        mem   = allocated("mem",  "pigeon", cluster),
+        time  = allocated("time", "pigeon", cluster),
+        threads  = allocated("threads", "pigeon", cluster),
     shell:
         """
         module load samtools smrtanalysis
@@ -268,9 +268,9 @@ rule pigeon_classify:
         rname = "pigeon_classify",
         dir = join(workpath,"4_classify"),
     resources:
-        mem   = allocated("mem",  "pigeon_classify", cluster),
-        time  = allocated("time", "pigeon_classify", cluster),
-        threads  = allocated("threads", "pigeon_classify", cluster),
+        mem   = allocated("mem",  "pigeon", cluster),
+        time  = allocated("time", "pigeon", cluster),
+        threads  = allocated("threads", "pigeon", cluster),
     shell:
         """
         module load samtools smrtanalysis
@@ -296,9 +296,9 @@ rule pigeon_filter:
         rname = "pigeon_classify",
         dir = join(workpath,"4_classify"),
     resources:
-        mem   = allocated("mem",  "pigeon_classify", cluster),
-        time  = allocated("time", "pigeon_classify", cluster),
-        threads  = allocated("threads", "pigeon_classify", cluster),
+        mem   = allocated("mem",  "pigeon", cluster),
+        time  = allocated("time", "pigeon", cluster),
+        threads  = allocated("threads", "pigeon", cluster),
     shell:
         """
         module load samtools smrtanalysis
@@ -326,9 +326,9 @@ rule pigeon_classify_merge:
         rname = "pigeon_classify_merge",
         dir = join(workpath,"4_classify"),
     resources:
-        mem   = allocated("mem",  "pigeon_classify_merge", cluster),
-        time  = allocated("time", "pigeon_classify_merge", cluster),
-        threads  = allocated("threads", "pigeon_classify_merge", cluster),
+        mem   = allocated("mem",  "pigeon", cluster),
+        time  = allocated("time", "pigeon", cluster),
+        threads  = allocated("threads", "pigeon", cluster),
     shell:
         """
         module load samtools smrtanalysis
@@ -354,9 +354,9 @@ rule pigeon_filter_merge:
         rname = "pigeon_classify_merge",
         dir = join(workpath,"4_classify"),
     resources:
-        mem   = allocated("mem",  "pigeon_classify_merge", cluster),
-        time  = allocated("time", "pigeon_classify_merge", cluster),
-        threads  = allocated("threads", "pigeon_classify_merge", cluster),
+        mem   = allocated("mem",  "pigeon", cluster),
+        time  = allocated("time", "pigeon", cluster),
+        threads  = allocated("threads", "pigeon", cluster),
     shell:
         """
         module load samtools smrtanalysis
@@ -378,9 +378,9 @@ rule annotate_gtf:
         rname = "annotate_gtf",
         dir = join(workpath,"5_annotate"),
     resources:
-        mem   = allocated("mem",  "annotate_gtf", cluster),
-        time  = allocated("time", "annotate_gtf", cluster),
-        threads  = allocated("threads", "annotate_gtf", cluster),
+        mem   = allocated("mem",  "__default__", cluster),
+        time  = allocated("time", "__default__", cluster),
+        threads  = allocated("threads", "__default__", cluster),
     run:
         """
         isos = {}
@@ -405,9 +405,9 @@ rule annotate_gtf_merge:
         rname = "annotate_gtf_merge",
         dir = join(workpath,"5_annotate"),
     resources:
-        mem   = allocated("mem",  "annotate_gtf_merge", cluster),
-        time  = allocated("time", "annotate_gtf_merge", cluster),
-        threads  = allocated("threads", "annotate_gtf_merge", cluster),
+        mem   = allocated("mem",  "__default__", cluster),
+        time  = allocated("time", "__default__", cluster),
+        threads  = allocated("threads", "__default__", cluster),
     run:
         """
         import os
@@ -435,9 +435,9 @@ rule find_overlaps:
         rname = "find_overlaps",
         dir = join(workpath,"5_annotate"),
     resources:
-        mem   = allocated("mem",  "find_overlaps", cluster),
-        time  = allocated("time", "find_overlaps", cluster),
-        threads  = allocated("threads", "find_overlaps", cluster),
+        mem   = allocated("mem",  "__default__", cluster),
+        time  = allocated("time", "__default__", cluster),
+        threads  = allocated("threads", "__default__", cluster),
     shell:
         """
         module load gffcompare
